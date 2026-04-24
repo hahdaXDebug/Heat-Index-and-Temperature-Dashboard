@@ -1,0 +1,7 @@
+Creating Virtual Environment:
+
+Windows:
+python3 -m venv sheets
+.sheets/bin/activate
+
+then install dependencies in virtual enviroment
