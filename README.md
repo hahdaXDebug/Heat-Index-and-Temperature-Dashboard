@@ -177,7 +177,10 @@ This file should NOT be uploaded publicly and should instead be configured using
 
 ## Contributors
 
-- Add contributor names here
+- Ada, John Adrian
+- Copia, Sebastian Naijel
+- Paez, Enrico Luis
+- Villena, Jerel Jireh
 
 ---
 
