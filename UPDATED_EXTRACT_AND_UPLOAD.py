@@ -1,15 +1,11 @@
-# Generated from: UPDATED_EXTRACT_AND_UPLOAD.ipynb
-# Converted at: 2026-05-08T05:20:19.170Z
-# Next step (optional): refactor into modules & generate tests with RunCell
-# Quick start: pip install runcell
-
+import os
+import json
 import pandas as pd
 import geopandas as gpd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import requests
 import re
-import json
 from datetime import datetime, timedelta
 
 # --- CONFIGURATION ---
@@ -42,7 +38,7 @@ def run_pipeline():
             except: continue
         new_df = pd.DataFrame(new_data)
         if new_df.empty:
-            print("No new data found. Aborting.")
+            print("No new data found on PAGASA site. Aborting.")
             return
     except Exception as e:
         print(f"Scrape failed: {e}")
@@ -55,7 +51,7 @@ def run_pipeline():
         gdf_stations = gpd.GeoDataFrame(
             new_df, geometry=gpd.points_from_xy(new_df.lng, new_df.lat), crs="EPSG:4326"
         )
-        # Spatial join with your specific 'REGION' column
+        # Spatial join with your specific 'REGION' column from the JSON
         gdf_enriched = gpd.sjoin(gdf_stations, ph_regions, how="left", predicate="within")
         
         # Prepare the final scraped batch
@@ -65,42 +61,50 @@ def run_pipeline():
         return
 
     # 3. CONNECT TO GOOGLE SHEETS
-    print(f"Step 3: Connecting to {SHEET_NAME}...")
+    print(f"Step 3: Connecting to Google Sheets...")
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = ServiceAccountCredentials.from_json_keyfile_name(CREDS_FILE, scope)
+
+        # AUTHENTICATION SWITCH
+        if "GOOGLE_CREDENTIALS_JSON" in os.environ:
+            # Runs on GitHub Actions
+            creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        else:
+            # Runs on your Laptop
+            creds = ServiceAccountCredentials.from_json_keyfile_name(CREDS_FILE, scope)
+            
         client = gspread.authorize(creds)
         spreadsheet = client.open(SHEET_NAME)
-        sheet = spreadsheet.get_worksheet(0) # Hits the first tab
+        sheet = spreadsheet.get_worksheet(0) 
 
         # 4. ROLLING 5-DAY LOGIC
-        # Pull existing data to compare
+        print("Step 4: Managing 5-day rolling window...")
         existing_data = sheet.get_all_records()
         old_df = pd.DataFrame(existing_data)
 
-        # Merge Old + New and Drop exact duplicates (Station + Time)
+        # Merge Old + New and remove duplicates (checks site + time)
         combined_df = pd.concat([old_df, final_batch], ignore_index=True)
         combined_df = combined_df.drop_duplicates(subset=['sitename', 'observed_at'])
 
-        # Convert observed_at to datetime for filtering
-        # PAGASA format is usually "Month DD, YYYY HH:MM AM/PM"
+        # Convert to datetime for the 5-day "cutoff"
         combined_df['date_dt'] = pd.to_datetime(combined_df['observed_at'], errors='coerce')
         
-        # Filter for only the last 5 days
-        five_days_ago = datetime.now() - timedelta(days=5)
-        filtered_df = combined_df[combined_df['date_dt'] >= five_days_ago].copy()
+        # Calculate cutoff (Current time - 5 days)
+        cutoff = datetime.now() - timedelta(days=5)
+        filtered_df = combined_df[combined_df['date_dt'] >= cutoff].copy()
         
-        # Sort so newest data is at the top
+        # Sort so newest data is always at the top of the sheet
         filtered_df = filtered_df.sort_values(by='date_dt', ascending=False)
-        filtered_df = filtered_df.drop(columns=['date_dt']) # Remove helper column
+        filtered_df = filtered_df.drop(columns=['date_dt']) 
 
-        # 5. CLEAR AND UPLOAD
+        # 5. UPLOAD
         sheet.clear()
         upload_data = [filtered_df.columns.values.tolist()] + filtered_df.astype(str).values.tolist()
         sheet.update('A1', upload_data)
         
         print(f"--- SUCCESS! ---")
-        print(f"Sheet now contains {len(filtered_df)} unique records from the last 5 days.")
+        print(f"Sheet updated. Total records in 5-day window: {len(filtered_df)}")
 
     except Exception as e:
         print(f"Google Sheets update failed: {e}")
