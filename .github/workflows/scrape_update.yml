@@ -19,10 +19,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pandas geopandas requests gspread oauth2client fiona shapely
+          pip install pandas geopandas requests gspread oauth2client fiona shapely pyproj
 
       - name: Run script
         env:
-          # This connects your secret to the script
-          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS }}
-        run: UPDATED_EXTRACT_AND_UPLOAD.py
+          # IMPORTANT: Must match the Secret name in your GitHub Settings
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        run: python UPDATED_EXTRACT_AND_UPLOAD.py
