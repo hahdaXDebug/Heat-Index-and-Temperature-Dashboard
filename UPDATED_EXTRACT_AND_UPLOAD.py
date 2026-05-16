@@ -71,8 +71,8 @@ def run_pipeline():
                     new_data.append({
                         "sitename": j["sitename"],
                         "site_key": normalize_name(j["sitename"]),
-                        "lat": float(j["lat"]),
-                        "lng": float(j["lng"]),
+                        "lat": j.get("lat"),
+                        "lng": j.get("lng"),
                         "heat_index": float(latest["heat_index"]),
                         "observed_at": latest["observed_at"]
                     })
@@ -90,6 +90,25 @@ def run_pipeline():
 
         print(f"Scrape failed: {e}")
         return
+
+    # =========================================================
+    # CLEAN INVALID COORDINATES
+    # =========================================================
+
+    new_df['lat'] = pd.to_numeric(
+        new_df['lat'],
+        errors='coerce'
+    )
+
+    new_df['lng'] = pd.to_numeric(
+        new_df['lng'],
+        errors='coerce'
+    )
+
+    # Remove rows missing coordinates
+    new_df = new_df.dropna(
+        subset=['lat', 'lng']
+    )
 
     # =========================================================
     # 2. MAP STATIONS TO REGIONS
@@ -225,7 +244,7 @@ def run_pipeline():
             suffixes=('', '_new')
         )
 
-        # Fill empty coordinates only
+        # Fill only empty coordinates
         old_df['lat'] = old_df['lat'].replace("", pd.NA)
         old_df['lng'] = old_df['lng'].replace("", pd.NA)
 
@@ -237,13 +256,13 @@ def run_pipeline():
             old_df['lng_new']
         )
 
-        # Cleanup
+        # Cleanup helper columns
         old_df = old_df.drop(
             columns=['lat_new', 'lng_new'],
             errors='ignore'
         )
 
-        # Keep structure
+        # Keep consistent structure
         old_df = old_df[required_cols]
 
         # =========================================================
@@ -258,6 +277,24 @@ def run_pipeline():
         # Remove duplicates
         combined_df = combined_df.drop_duplicates(
             subset=['sitename', 'observed_at']
+        )
+
+        # =========================================================
+        # REMOVE INVALID COORDINATES
+        # =========================================================
+
+        combined_df['lat'] = pd.to_numeric(
+            combined_df['lat'],
+            errors='coerce'
+        )
+
+        combined_df['lng'] = pd.to_numeric(
+            combined_df['lng'],
+            errors='coerce'
+        )
+
+        combined_df = combined_df.dropna(
+            subset=['lat', 'lng']
         )
 
         # =========================================================
@@ -282,14 +319,9 @@ def run_pipeline():
             ascending=False
         )
 
-        # Remove helper column
+        # Remove helper columns
         filtered_df = filtered_df.drop(
-            columns=['date_dt']
-        )
-
-        # Remove helper matching key before upload
-        filtered_df = filtered_df.drop(
-            columns=['site_key'],
+            columns=['date_dt', 'site_key'],
             errors='ignore'
         )
 
